@@ -8,12 +8,14 @@ using UnityEngine.InputSystem;
 public class TransitionManager : MonoBehaviour
 {
     [Header("발표 자료 설정")]
-    public List<Texture2D> slideImages = new List<Texture2D>(); // 발표 자료 이미지 리스트
-    public RawImage slideDisplay; // 발표 자료를 표시할 RawImage
+    public List<Sprite> slideImages = new List<Sprite>(); // 발표 자료 이미지 리스트 (Sprite)
+    public Image slideDisplay; // 발표 자료를 표시할 Image
     
     [Header("컨트롤러 설정")]
+    public XRBaseController leftController; // 왼쪽 컨트롤러
     public XRBaseController rightController; // 오른쪽 컨트롤러
-    public InputActionReference rightTriggerAction; // 오른쪽 트리거 입력 액션
+    public InputActionReference rightTriggerAction; // 오른쪽 트리거 입력 액션 (다음 슬라이드)
+    public InputActionReference leftGripAction; // 왼쪽 그랩 입력 액션 (이전 슬라이드)
     
     [Header("슬라이드 정보")]
     public int currentSlideIndex = 0;
@@ -25,6 +27,7 @@ public class TransitionManager : MonoBehaviour
     public System.Action OnPresentationEnd; // 발표 종료 이벤트
     
     private bool rightTriggerPressed = false;
+    private bool leftGripPressed = false;
     
     // Start is called before the first frame update
     void Start()
@@ -42,13 +45,25 @@ public class TransitionManager : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        HandleRightControllerInput();
+        HandleControllerInput();
     }
     
     /// <summary>
-    /// 오른쪽 컨트롤러 입력 처리
+    /// 컨트롤러 입력 처리
     /// </summary>
-    private void HandleRightControllerInput()
+    private void HandleControllerInput()
+    {
+        // 오른쪽 트리거 버튼 처리 (다음 슬라이드)
+        HandleRightTrigger();
+        
+        // 왼쪽 그랩 버튼 처리 (이전 슬라이드)  
+        HandleLeftGrip();
+    }
+    
+    /// <summary>
+    /// 오른쪽 트리거 버튼 처리 (다음 슬라이드)
+    /// </summary>
+    private void HandleRightTrigger()
     {
         if (rightController == null) return;
         
@@ -78,21 +93,57 @@ public class TransitionManager : MonoBehaviour
     }
     
     /// <summary>
+    /// 왼쪽 그랩 버튼 처리 (이전 슬라이드)
+    /// </summary>
+    private void HandleLeftGrip()
+    {
+        if (leftController == null) return;
+        
+        // 그랩 버튼 입력 감지
+        bool gripPressed = false;
+        
+        if (leftGripAction != null && leftGripAction.action != null)
+        {
+            // InputActionReference를 통한 입력 감지
+            gripPressed = leftGripAction.action.ReadValue<float>() > 0.5f;
+        }
+        else
+        {
+            // InputActionReference가 없으면 경고 메시지 출력
+            if (leftGripAction == null)
+            {
+                Debug.LogWarning("Left Grip Action이 설정되지 않았습니다. Inspector에서 설정해주세요.");
+            }
+            return;
+        }
+        
+        if (gripPressed && !leftGripPressed)
+        {
+            PreviousSlide();
+        }
+        leftGripPressed = gripPressed;
+    }
+    
+    /// <summary>
     /// 다음 슬라이드로 넘어가기
     /// </summary>
     public void NextSlide()
     {
         if (slideImages.Count == 0) return;
         
-        currentSlideIndex++;
-        if (currentSlideIndex >= slideImages.Count)
+        // 더 많은 슬라이드가 있는지 확인
+        if (currentSlideIndex < slideImages.Count - 1)
         {
-            currentSlideIndex = slideImages.Count - 1;
-            EndPresentation();
-            return;
+            currentSlideIndex++;
+            DisplaySlide(currentSlideIndex);
+            Debug.Log($"다음 슬라이드로 이동: {currentSlideIndex + 1}/{slideImages.Count}");
         }
-        
-        DisplaySlide(currentSlideIndex);
+        else
+        {
+            // 마지막 슬라이드에 도달
+            Debug.Log("마지막 슬라이드입니다. 발표를 종료합니다.");
+            EndPresentation();
+        }
     }
     
     /// <summary>
@@ -102,13 +153,18 @@ public class TransitionManager : MonoBehaviour
     {
         if (slideImages.Count == 0) return;
         
-        currentSlideIndex--;
-        if (currentSlideIndex < 0)
+        // 0번 슬라이드보다 뒤로 갈 수 있는지 확인
+        if (currentSlideIndex > 0)
         {
-            currentSlideIndex = 0;
+            currentSlideIndex--;
+            DisplaySlide(currentSlideIndex);
+            Debug.Log($"이전 슬라이드로 이동: {currentSlideIndex + 1}/{slideImages.Count}");
         }
-        
-        DisplaySlide(currentSlideIndex);
+        else
+        {
+            // 첫 번째 슬라이드에서는 뒤로 갈 수 없음
+            Debug.Log("첫 번째 슬라이드입니다. 더 이상 뒤로 갈 수 없습니다.");
+        }
     }
     
     /// <summary>
@@ -120,7 +176,7 @@ public class TransitionManager : MonoBehaviour
         if (index < 0 || index >= slideImages.Count || slideDisplay == null) return;
         
         currentSlideIndex = index;
-        slideDisplay.texture = slideImages[index];
+        slideDisplay.sprite = slideImages[index];
         
         // 슬라이드 변경 이벤트 발생
         OnSlideChanged?.Invoke(currentSlideIndex);
@@ -153,10 +209,10 @@ public class TransitionManager : MonoBehaviour
     /// <summary>
     /// 슬라이드 이미지 추가
     /// </summary>
-    /// <param name="texture">추가할 텍스처</param>
-    public void AddSlide(Texture2D texture)
+    /// <param name="sprite">추가할 스프라이트</param>
+    public void AddSlide(Sprite sprite)
     {
-        slideImages.Add(texture);
+        slideImages.Add(sprite);
     }
     
     /// <summary>
@@ -182,13 +238,24 @@ public class TransitionManager : MonoBehaviour
     /// </summary>
     private void CheckInputActionReferences()
     {
+        // 오른쪽 트리거 액션 확인
         if (rightTriggerAction == null)
         {
-            Debug.LogError("Right Trigger Action이 설정되지 않았습니다! Inspector에서 'XRI RightHand/Trigger'를 설정해주세요.");
+            Debug.LogError("Right Trigger Action이 설정되지 않았습니다! Inspector에서 'XRI RightHand Interaction/Activate'를 설정해주세요.");
         }
         else
         {
             Debug.Log($"Right Trigger Action 설정됨: {rightTriggerAction.action.name}");
+        }
+        
+        // 왼쪽 그랩 액션 확인
+        if (leftGripAction == null)
+        {
+            Debug.LogError("Left Grip Action이 설정되지 않았습니다! Inspector에서 'XRI LeftHand Interaction/Select'를 설정해주세요.");
+        }
+        else
+        {
+            Debug.Log($"Left Grip Action 설정됨: {leftGripAction.action.name}");
         }
     }
 }
