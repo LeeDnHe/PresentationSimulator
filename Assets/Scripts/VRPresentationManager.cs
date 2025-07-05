@@ -358,18 +358,10 @@ public class VRPresentationManager : MonoBehaviour
         
         if (feedbackManager != null)
         {
-            feedbackManager.StartFeedback();
+            feedbackManager.SetRealTimeFeedbackEnabled(true);
         }
         
-        if (audienceManager != null)
-        {
-            audienceManager.StartReaction();
-        }
-        
-        if (resultManager != null)
-        {
-            resultManager.StartRecording();
-        }
+        // AudienceReactionManager와 PresentationResultManager는 자동으로 동작
         
         // 발표 시작 이벤트 발생
         OnPresentationStarted?.Invoke();
@@ -404,18 +396,10 @@ public class VRPresentationManager : MonoBehaviour
         
         if (feedbackManager != null)
         {
-            feedbackManager.StopFeedback();
+            feedbackManager.SetRealTimeFeedbackEnabled(false);
         }
         
-        if (audienceManager != null)
-        {
-            audienceManager.StopReaction();
-        }
-        
-        if (resultManager != null)
-        {
-            resultManager.StopRecording();
-        }
+        // AudienceReactionManager와 PresentationResultManager는 자동으로 종료 처리
         
         // 발표 종료 이벤트 발생
         OnPresentationEnded?.Invoke();
@@ -526,28 +510,11 @@ public class VRPresentationManager : MonoBehaviour
     void OnDestroy()
     {
         // 이벤트 해제
-        if (voiceAnalyzer != null)
-        {
-            // 음성 분석 이벤트 해제
-            voiceAnalyzer.OnAnalysisComplete -= OnVoiceAnalysisComplete;
-        }
-        
-        if (feedbackManager != null)
-        {
-            // 피드백 이벤트 해제
-            feedbackManager.OnFeedbackUpdate -= OnFeedbackUpdate;
-        }
-        
-        if (audienceManager != null)
-        {
-            // 청중 반응 이벤트 해제
-            audienceManager.OnReactionChange -= OnAudienceReaction;
-        }
-        
         if (resultManager != null)
         {
             // 결과 관리 이벤트 해제
-            resultManager.OnResultReady -= OnPresentationResultReady;
+            resultManager.OnRestartRequested -= RestartPresentation;
+            resultManager.OnExitRequested -= ExitPresentation;
         }
         
         // UI 버튼 이벤트 해제
