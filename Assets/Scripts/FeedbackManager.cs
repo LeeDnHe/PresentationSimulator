@@ -9,36 +9,20 @@ public class FeedbackManager : MonoBehaviour
     [Header("피드백 UI 설정")]
     public GameObject feedbackPanel; // 피드백 패널
     public TextMeshProUGUI feedbackText; // 피드백 텍스트
-    public Image feedbackBackground; // 피드백 배경
-    public Slider scoreSlider; // 점수 슬라이더
-    public TextMeshProUGUI scoreText; // 점수 텍스트
     
     [Header("발표 제어 설정")]
     public Button endButton; // 종료 버튼
     public TextMeshProUGUI statusText; // 상태 텍스트
     
-    [Header("애니메이션 설정")]
-    public float fadeInDuration = 0.5f; // 페이드인 시간
-    public float displayDuration = 3f; // 표시 지속 시간
-    public float fadeOutDuration = 0.5f; // 페이드아웃 시간
-    
     [Header("피드백 설정")]
     public bool showRealTimeFeedback = true; // 실시간 피드백 표시 여부
-    public Vector3 feedbackPosition = new Vector3(0, 2, 3); // 피드백 표시 위치
-    
-    [Header("색상 설정")]
-    public Color excellentColor = Color.green; // 우수 (80점 이상)
-    public Color goodColor = Color.yellow; // 양호 (60-80점)
-    public Color poorColor = Color.red; // 부족 (60점 미만)
+    public string defaultFeedbackText = "음성 분석 대기 중..."; // 기본 피드백 텍스트
     
     [Header("이벤트")]
     public System.Action<AnalysisResult> OnFeedbackDisplayed; // 피드백 표시 이벤트
     
-    private Coroutine currentFeedbackCoroutine;
-    private CanvasGroup canvasGroup;
     private VoiceAnalyzer voiceAnalyzer;
     private TransitionManager transitionManager;
-    private Queue<AnalysisResult> feedbackQueue = new Queue<AnalysisResult>();
     
     void Start()
     {
@@ -70,8 +54,9 @@ public class FeedbackManager : MonoBehaviour
             endButton.onClick.AddListener(EndPresentationPublic);
         }
         
-        // 초기 상태 설정
-        SetFeedbackPanelActive(false);
+        // 초기 상태 설정 - 패널은 항상 활성화, 기본 텍스트 설정
+        SetFeedbackPanelActive(true);
+        SetDefaultFeedbackText();
         
         // UI 시스템 초기화 후 UI 업데이트 (지연 호출)
         StartCoroutine(UpdateUIDelayed());
@@ -79,13 +64,6 @@ public class FeedbackManager : MonoBehaviour
     
     void Update()
     {
-        // 큐에 대기 중인 피드백 처리
-        if (feedbackQueue.Count > 0 && currentFeedbackCoroutine == null)
-        {
-            AnalysisResult nextFeedback = feedbackQueue.Dequeue();
-            DisplayFeedback(nextFeedback);
-        }
-        
         // 슬라이드 정보 실시간 업데이트 (발표 진행 중일 때만)
         if (transitionManager != null && transitionManager.isPresenting && statusText != null)
         {
@@ -99,20 +77,16 @@ public class FeedbackManager : MonoBehaviour
     /// </summary>
     private void InitializeComponents()
     {
-        // Canvas Group 추가 (없으면)
-        if (feedbackPanel != null)
+        // 피드백 패널 확인
+        if (feedbackPanel == null)
         {
-            canvasGroup = feedbackPanel.GetComponent<CanvasGroup>();
-            if (canvasGroup == null)
-            {
-                canvasGroup = feedbackPanel.AddComponent<CanvasGroup>();
-            }
+            Debug.LogError("❌ FeedbackPanel이 할당되지 않았습니다!");
         }
         
-        // 피드백 패널 위치 설정
-        if (feedbackPanel != null)
+        // 피드백 텍스트 확인
+        if (feedbackText == null)
         {
-            feedbackPanel.transform.position = feedbackPosition;
+            Debug.LogError("❌ FeedbackText가 할당되지 않았습니다!");
         }
     }
     
@@ -124,151 +98,36 @@ public class FeedbackManager : MonoBehaviour
     {
         if (!showRealTimeFeedback) return;
         
-        // 피드백 큐에 추가
-        feedbackQueue.Enqueue(result);
-    }
-    
-    /// <summary>
-    /// 피드백 직접 표시
-    /// </summary>
-    /// <param name="result">분석 결과</param>
-    private void DisplayFeedback(AnalysisResult result)
-    {
-        if (currentFeedbackCoroutine != null)
-        {
-            StopCoroutine(currentFeedbackCoroutine);
-        }
-        
-        currentFeedbackCoroutine = StartCoroutine(DisplayFeedbackCoroutine(result));
-    }
-    
-    /// <summary>
-    /// 피드백 표시 코루틴
-    /// </summary>
-    /// <param name="result">분석 결과</param>
-    private IEnumerator DisplayFeedbackCoroutine(AnalysisResult result)
-    {
-        // 피드백 내용 설정
-        UpdateFeedbackContent(result);
-        
-        // 피드백 패널 활성화
-        SetFeedbackPanelActive(true);
-        
-        // 페이드인 애니메이션
-        yield return StartCoroutine(FadeIn());
-        
-        // 표시 지속 시간
-        yield return new WaitForSeconds(displayDuration);
-        
-        // 페이드아웃 애니메이션
-        yield return StartCoroutine(FadeOut());
-        
-        // 피드백 패널 비활성화
-        SetFeedbackPanelActive(false);
+        // 직접 피드백 텍스트 업데이트
+        UpdateFeedbackText(result.feedback);
         
         // 이벤트 발생
         OnFeedbackDisplayed?.Invoke(result);
         
-        currentFeedbackCoroutine = null;
+        Debug.Log($"🎤 피드백 업데이트: {result.feedback}");
     }
     
     /// <summary>
-    /// 피드백 내용 업데이트
+    /// 기본 피드백 텍스트 설정
     /// </summary>
-    /// <param name="result">분석 결과</param>
-    private void UpdateFeedbackContent(AnalysisResult result)
+    private void SetDefaultFeedbackText()
     {
-        // 피드백 텍스트 설정
+        UpdateFeedbackText(defaultFeedbackText);
+    }
+    
+    /// <summary>
+    /// 피드백 텍스트 업데이트
+    /// </summary>
+    /// <param name="message">피드백 메시지</param>
+    private void UpdateFeedbackText(string message)
+    {
         if (feedbackText != null)
         {
-            feedbackText.text = result.feedback;
-            feedbackText.color = result.feedbackColor;
-        }
-        
-        // 배경 색상 설정
-        if (feedbackBackground != null)
-        {
-            Color backgroundColor = GetBackgroundColor(result.overallScore);
-            feedbackBackground.color = backgroundColor;
-        }
-        
-        // 점수 슬라이더 설정
-        if (scoreSlider != null)
-        {
-            scoreSlider.value = result.overallScore / 100f;
-        }
-        
-        // 점수 텍스트 설정
-        if (scoreText != null)
-        {
-            scoreText.text = $"{result.overallScore:F1}점";
+            feedbackText.text = message;
         }
     }
     
-    /// <summary>
-    /// 점수에 따른 배경 색상 반환
-    /// </summary>
-    /// <param name="score">점수</param>
-    /// <returns>배경 색상</returns>
-    private Color GetBackgroundColor(float score)
-    {
-        if (score >= 80f)
-        {
-            return excellentColor;
-        }
-        else if (score >= 60f)
-        {
-            return goodColor;
-        }
-        else
-        {
-            return poorColor;
-        }
-    }
-    
-    /// <summary>
-    /// 페이드인 애니메이션
-    /// </summary>
-    /// <returns>코루틴</returns>
-    private IEnumerator FadeIn()
-    {
-        if (canvasGroup == null) yield break;
-        
-        float elapsedTime = 0f;
-        float startAlpha = canvasGroup.alpha;
-        
-        while (elapsedTime < fadeInDuration)
-        {
-            elapsedTime += Time.deltaTime;
-            float alpha = Mathf.Lerp(startAlpha, 1f, elapsedTime / fadeInDuration);
-            canvasGroup.alpha = alpha;
-            yield return null;
-        }
-        
-        canvasGroup.alpha = 1f;
-    }
-    
-    /// <summary>
-    /// 페이드아웃 애니메이션
-    /// </summary>
-    /// <returns>코루틴</returns>
-    private IEnumerator FadeOut()
-    {
-        if (canvasGroup == null) yield break;
-        
-        float elapsedTime = 0f;
-        float startAlpha = canvasGroup.alpha;
-        
-        while (elapsedTime < fadeOutDuration)
-        {
-            elapsedTime += Time.deltaTime;
-            float alpha = Mathf.Lerp(startAlpha, 0f, elapsedTime / fadeOutDuration);
-            canvasGroup.alpha = alpha;
-            yield return null;
-        }
-        
-        canvasGroup.alpha = 0f;
-    }
+
     
     /// <summary>
     /// 피드백 패널 활성화/비활성화
@@ -285,19 +144,11 @@ public class FeedbackManager : MonoBehaviour
     /// <summary>
     /// 수동 피드백 표시
     /// </summary>
-    /// <param name="message">메시지</param>
-    /// <param name="score">점수</param>
-    /// <param name="color">색상</param>
-    public void ShowManualFeedback(string message, float score, Color color)
+    /// <param name="message">피드백 메시지</param>
+    public void ShowManualFeedback(string message)
     {
-        AnalysisResult result = new AnalysisResult
-        {
-            feedback = message,
-            overallScore = score,
-            feedbackColor = color
-        };
-        
-        ShowFeedback(result);
+        UpdateFeedbackText(message);
+        Debug.Log($"🎤 수동 피드백 설정: {message}");
     }
     
     /// <summary>
@@ -319,19 +170,12 @@ public class FeedbackManager : MonoBehaviour
     }
     
     /// <summary>
-    /// 피드백 큐 정리
+    /// 피드백 초기화
     /// </summary>
-    public void ClearFeedbackQueue()
+    public void ClearFeedback()
     {
-        feedbackQueue.Clear();
-        
-        if (currentFeedbackCoroutine != null)
-        {
-            StopCoroutine(currentFeedbackCoroutine);
-            currentFeedbackCoroutine = null;
-        }
-        
-        SetFeedbackPanelActive(false);
+        SetDefaultFeedbackText();
+        Debug.Log("🧹 피드백 초기화됨");
     }
     
     /// <summary>
@@ -344,7 +188,7 @@ public class FeedbackManager : MonoBehaviour
         
         if (!enabled)
         {
-            ClearFeedbackQueue();
+            ClearFeedback();
         }
     }
     
@@ -396,8 +240,8 @@ public class FeedbackManager : MonoBehaviour
             voiceAnalyzer.StopAnalysis();
         }
         
-        // 피드백 큐 정리
-        ClearFeedbackQueue();
+        // 피드백 초기화
+        ClearFeedback();
         
         // UI 업데이트
         UpdateUI();
@@ -494,10 +338,7 @@ public class FeedbackManager : MonoBehaviour
             transitionManager.OnSlideChanged -= OnSlideChanged;
         }
         
-        // 코루틴 정리
-        if (currentFeedbackCoroutine != null)
-        {
-            StopCoroutine(currentFeedbackCoroutine);
-        }
+        // 피드백 정리
+        ClearFeedback();
     }
 } 

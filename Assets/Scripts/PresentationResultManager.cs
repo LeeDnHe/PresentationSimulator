@@ -511,7 +511,7 @@ public class PresentationResultManager : MonoBehaviour
         var feedbackManager = FindObjectOfType<FeedbackManager>();
         if (feedbackManager != null)
         {
-            feedbackManager.ClearFeedbackQueue();
+            feedbackManager.ClearFeedback();
         }
         
         // 청중 반응 매니저 초기화

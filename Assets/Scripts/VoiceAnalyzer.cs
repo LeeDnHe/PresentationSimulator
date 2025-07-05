@@ -347,38 +347,28 @@ public class VoiceAnalyzer : MonoBehaviour
     }
     
     /// <summary>
-    /// 피드백 생성
+    /// 피드백 생성 (임시 분석용)
     /// </summary>
     /// <param name="data">분석 데이터</param>
     /// <returns>분석 결과</returns>
     private AnalysisResult GenerateFeedback(VoiceAnalysisData data)
     {
-        AnalysisResult result = new AnalysisResult
-        {
-            analysisData = data
+        // 간단한 랜덤 피드백 메시지 생성
+        string[] simpleFeedback = {
+            "계속 좋은 발표하고 있습니다! ",
+            "자신감 있게 발표해주세요! ",
+            "목소리가 좋습니다! ",
+            "발표 잘 하고 있어요! ",
+            "이 기세로 계속해주세요! "
         };
         
-        // 전체 점수 계산
-        result.overallScore = (data.confidence + data.volume + data.clarity) * 100f / 3f;
-        
-        // 피드백 메시지 생성
-        if (result.overallScore >= 80f)
+        return new AnalysisResult
         {
-            result.feedback = "훌륭합니다! 자신감 있게 발표하고 있습니다.";
-            result.feedbackColor = Color.green;
-        }
-        else if (result.overallScore >= 60f)
-        {
-            result.feedback = "좋습니다! 조금 더 크고 명확하게 말해보세요.";
-            result.feedbackColor = Color.yellow;
-        }
-        else
-        {
-            result.feedback = "더 자신감 있게 발표해보세요. 목소리를 크게 내어보세요.";
-            result.feedbackColor = Color.red;
-        }
-        
-        return result;
+            overallScore = 0f, // 스코어 사용 안함
+            feedback = simpleFeedback[UnityEngine.Random.Range(0, simpleFeedback.Length)],
+            feedbackColor = Color.white,
+            analysisData = data
+        };
     }
     
     /// <summary>
@@ -397,22 +387,12 @@ public class VoiceAnalyzer : MonoBehaviour
     {
         if (analysisHistory.Count == 0) return null;
         
-        // 모든 분석 결과의 평균 계산
-        float totalScore = 0f;
-        foreach (var result in analysisHistory)
-        {
-            totalScore += result.overallScore;
-        }
-        
-        float averageScore = totalScore / analysisHistory.Count;
-        
         // 최종 분석 결과 생성
         AnalysisResult finalResult = new AnalysisResult
         {
-            overallScore = averageScore,
-            feedback = $"발표 완료! 평균 점수: {averageScore:F1}점",
-            feedbackColor = averageScore >= 80f ? Color.green : 
-                           averageScore >= 60f ? Color.yellow : Color.red,
+            overallScore = 0f, // 스코어 사용 안함
+            feedback = $"발표 완료! 총 {analysisHistory.Count}개의 피드백이 생성되었습니다. 수고하셨습니다! 🎉",
+            feedbackColor = Color.white,
             analysisData = new VoiceAnalysisData
             {
                 timestamp = DateTime.Now
@@ -838,7 +818,7 @@ public class VoiceAnalyzer : MonoBehaviour
                 OnAnalysisCompleted?.Invoke(result);
                 OnVoiceDataReceived?.Invoke(analysisData);
                 
-                Debug.Log($"실시간 분석 완료 - 점수: {result.overallScore:F1}점");
+                Debug.Log($"실시간 분석 완료 - 피드백: {result.feedback}");
             }
         }
         catch (System.Exception e)
@@ -873,62 +853,77 @@ public class VoiceAnalyzer : MonoBehaviour
     }
     
     /// <summary>
-    /// 서버 데이터 기반 피드백 생성
+    /// 서버 데이터 기반 피드백 생성 (단순화)
     /// </summary>
     private AnalysisResult GenerateFeedbackFromServer(VoiceAnalysisData data)
     {
-        float score = 0f;
-        string feedback = "";
-        Color color = Color.white;
-        
-        // WPM 평가 (90-150이 적정)
-        float wpmScore = 0f;
-        if (data.wpm >= 90f && data.wpm <= 150f)
-        {
-            wpmScore = 100f;
-        }
-        else if (data.wpm < 90f)
-        {
-            wpmScore = Mathf.Lerp(50f, 100f, data.wpm / 90f);
-        }
-        else
-        {
-            wpmScore = Mathf.Lerp(100f, 60f, (data.wpm - 150f) / 50f);
-        }
-        
-        // 볼륨 평가
-        float volumeScore = Mathf.Clamp01(data.volume * 10f) * 100f;
-        
-        // 명확도 평가
-        float clarityScore = data.clarity * 100f;
-        
-        // 전체 점수 계산
-        score = (wpmScore + volumeScore + clarityScore) / 3f;
-        
-        // 피드백 메시지 생성
-        if (score >= 80f)
-        {
-            feedback = "훌륭한 발표입니다! 👏";
-            color = Color.green;
-        }
-        else if (score >= 60f)
-        {
-            feedback = "좋은 발표입니다! 💪";
-            color = Color.yellow;
-        }
-        else
-        {
-            feedback = "조금 더 자신감을 갖고 말해보세요! 💡";
-            color = Color.red;
-        }
+        string feedback = GenerateSmartFeedback(data);
         
         return new AnalysisResult
         {
-            overallScore = score,
+            overallScore = 0f, // 스코어 사용 안함
             feedback = feedback,
-            feedbackColor = color,
+            feedbackColor = Color.white,
             analysisData = data
         };
+    }
+    
+    /// <summary>
+    /// 스마트 피드백 메시지 생성
+    /// </summary>
+    private string GenerateSmartFeedback(VoiceAnalysisData data)
+    {
+        string feedback = "";
+        
+        // WPM 기반 피드백
+        if (data.wpm < 90f)
+        {
+            feedback = "조금 더 빠르게 말해보세요. 속도를 높여주세요!";
+        }
+        else if (data.wpm > 150f)
+        {
+            feedback = "말하는 속도가 빠릅니다. 조금 천천히 말해보세요.";
+        }
+        else
+        {
+            // 볼륨 기반 피드백
+            if (data.volume < 0.3f)
+            {
+                feedback = "목소리를 좀 더 크게 내어보세요!";
+            }
+            else if (data.volume > 0.8f)
+            {
+                feedback = "목소리가 너무 큽니다. 조금 작게 말해보세요.";
+            }
+            else
+            {
+                // 명확도 기반 피드백
+                if (data.clarity < 0.5f)
+                {
+                    feedback = "발음을 더 명확하게 해보세요. 또박또박!";
+                }
+                else
+                {
+                    // 긍정적 피드백
+                    string[] positiveFeedback = {
+                        "좋습니다! 계속 이렇게 발표해주세요!",
+                        "훌륭한 발표입니다! 자신감 있게!",
+                        "완벽합니다! 이 속도로 계속해주세요!",
+                        "멋진 발표네요! 청중이 집중하고 있어요!",
+                        "훌륭한 목소리입니다! 계속 유지해주세요!"
+                    };
+                    feedback = positiveFeedback[UnityEngine.Random.Range(0, positiveFeedback.Length)];
+                }
+            }
+        }
+        
+        // 인식된 텍스트가 있으면 추가 정보 제공
+        if (!string.IsNullOrEmpty(data.recognizedText) && data.recognizedText.Length > 10)
+        {
+            feedback += $"\n💬 \"{data.recognizedText.Substring(0, System.Math.Min(30, data.recognizedText.Length))}...\"";
+        }
+        
+        return feedback;
     }
     
     /// <summary>

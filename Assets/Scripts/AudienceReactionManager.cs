@@ -2,77 +2,49 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-[System.Serializable]
-public class AudienceReaction
-{
-    public string reactionType; // 반응 유형 (박수, 웃음, 기침 등)
-    public AudioClip soundClip; // 반응 소리
-    public GameObject vfxPrefab; // 반응 VFX 프리팹
-    public float probability; // 발생 확률 (0-1)
-    public float minScore; // 최소 점수 (이 점수 이상에서 발생)
-    public float maxScore; // 최대 점수 (이 점수 이하에서 발생)
-}
-
 public class AudienceReactionManager : MonoBehaviour
 {
-    [Header("청중 반응 설정")]
-    public List<AudienceReaction> reactions = new List<AudienceReaction>();
-    public Transform[] audiencePositions; // 청중 위치들
-    public float reactionDelay = 1f; // 반응 지연 시간
+    [Header("청중 애니메이션 설정")]
+    public Animator[] audienceAnimators; // 청중 애니메이터들
+    public string animationTrigger = "Animation_On"; // 애니메이션 트리거 이름
+    public float animationInterval = 15f; // 애니메이션 발동 간격 (초)
+    public int animationCount = 2; // 한 번에 발동할 애니메이션 개수
     
-    [Header("오디오 설정")]
+    [Header("효과음 설정")]
+    public AudioClip[] soundEffects; // 효과음 리스트
     public AudioSource audioSource;
     public float baseVolume = 0.7f;
-    public float randomVolumeVariation = 0.2f;
+    public float soundInterval = 30f; // 효과음 발동 간격 (초)
+    public float soundProbability = 0.5f; // 효과음 발동 확률
     
-    [Header("VFX 설정")]
-    public Transform vfxParent; // VFX 부모 오브젝트
-    public float vfxLifetime = 3f; // VFX 지속 시간
+    [Header("게임 제어")]
+    public bool isActive = false; // 반응 시스템 활성화 상태
     
-    [Header("반응 확률 설정")]
-    public AnimationCurve scoreToReactionCurve; // 점수에 따른 반응 확률 곡선
-    public float baseReactionChance = 0.3f; // 기본 반응 확률
-    public float maxReactionChance = 0.8f; // 최대 반응 확률
-    
-    [Header("이벤트")]
-    public System.Action<AudienceReaction> OnReactionTriggered; // 반응 발생 이벤트
-    
-    private VoiceAnalyzer voiceAnalyzer;
-    private FeedbackManager feedbackManager;
-    private Queue<AnalysisResult> reactionQueue = new Queue<AnalysisResult>();
-    private List<GameObject> activeVFX = new List<GameObject>();
+    private Coroutine animationCoroutine;
+    private Coroutine soundCoroutine;
+    private TransitionManager transitionManager;
+    private List<int> usedAnimatorIndices = new List<int>(); // 사용된 애니메이터 인덱스
     
     void Start()
     {
         // 컴포넌트 초기화
         InitializeComponents();
         
-        // 음성 분석기 연결
-        voiceAnalyzer = FindObjectOfType<VoiceAnalyzer>();
-        if (voiceAnalyzer != null)
+        // 전환 관리자 연결
+        transitionManager = FindObjectOfType<TransitionManager>();
+        if (transitionManager != null)
         {
-            voiceAnalyzer.OnAnalysisCompleted += HandleAnalysisResult;
+            transitionManager.OnPresentationStart += StartAudienceReactions;
+            transitionManager.OnPresentationEnd += StopAudienceReactions;
         }
         
-        // 피드백 매니저 연결
-        feedbackManager = FindObjectOfType<FeedbackManager>();
-        if (feedbackManager != null)
-        {
-            feedbackManager.OnFeedbackDisplayed += HandleFeedbackDisplayed;
-        }
-        
-        // 기본 반응 설정
-        SetupDefaultReactions();
+        Debug.Log("🎭 AudienceReactionManager 초기화 완료");
     }
     
     void Update()
     {
-        // 큐에 대기 중인 반응 처리
-        if (reactionQueue.Count > 0)
-        {
-            AnalysisResult result = reactionQueue.Dequeue();
-            StartCoroutine(ProcessReaction(result));
-        }
+        // 현재는 업데이트에서 처리할 내용이 없음
+        // 모든 반응은 코루틴으로 처리
     }
     
     /// <summary>
@@ -86,300 +58,206 @@ public class AudienceReactionManager : MonoBehaviour
             audioSource = gameObject.AddComponent<AudioSource>();
         }
         
-        // VFX 부모 설정
-        if (vfxParent == null)
+        // 애니메이터 배열 확인
+        if (audienceAnimators == null || audienceAnimators.Length == 0)
         {
-            vfxParent = transform;
+            Debug.LogWarning("⚠️ 청중 애니메이터가 설정되지 않았습니다!");
         }
         
-        // 점수-반응 곡선 초기화
-        if (scoreToReactionCurve == null || scoreToReactionCurve.keys.Length == 0)
+        // 효과음 배열 확인
+        if (soundEffects == null || soundEffects.Length == 0)
         {
-            scoreToReactionCurve = AnimationCurve.EaseInOut(0f, 0f, 100f, 1f);
+            Debug.LogWarning("⚠️ 효과음이 설정되지 않았습니다!");
         }
     }
     
     /// <summary>
-    /// 기본 반응 설정
+    /// 청중 반응 시작 (게임 시작 시 호출)
     /// </summary>
-    private void SetupDefaultReactions()
+    public void StartAudienceReactions()
     {
-        if (reactions.Count > 0) return;
+        if (isActive) return;
         
-        // 기본 반응 추가 (실제 오디오 클립과 VFX는 따로 설정 필요)
-        reactions.Add(new AudienceReaction
-        {
-            reactionType = "박수",
-            probability = 0.7f,
-            minScore = 70f,
-            maxScore = 100f
-        });
+        isActive = true;
         
-        reactions.Add(new AudienceReaction
+        // 애니메이션 코루틴 시작
+        if (audienceAnimators != null && audienceAnimators.Length > 0)
         {
-            reactionType = "웃음",
-            probability = 0.5f,
-            minScore = 60f,
-            maxScore = 90f
-        });
+            animationCoroutine = StartCoroutine(AnimationCoroutine());
+        }
         
-        reactions.Add(new AudienceReaction
+        // 효과음 코루틴 시작
+        if (soundEffects != null && soundEffects.Length > 0)
         {
-            reactionType = "기침",
-            probability = 0.3f,
-            minScore = 0f,
-            maxScore = 50f
-        });
+            soundCoroutine = StartCoroutine(SoundCoroutine());
+        }
         
-        reactions.Add(new AudienceReaction
-        {
-            reactionType = "속삭임",
-            probability = 0.4f,
-            minScore = 20f,
-            maxScore = 60f
-        });
+        Debug.Log("🎭 청중 반응 시작!");
     }
     
     /// <summary>
-    /// 분석 결과 처리
+    /// 청중 반응 정지 (게임 종료 시 호출)
     /// </summary>
-    /// <param name="result">분석 결과</param>
-    private void HandleAnalysisResult(AnalysisResult result)
+    public void StopAudienceReactions()
     {
-        // 반응 큐에 추가
-        reactionQueue.Enqueue(result);
-    }
-    
-    /// <summary>
-    /// 피드백 표시 처리
-    /// </summary>
-    /// <param name="result">분석 결과</param>
-    private void HandleFeedbackDisplayed(AnalysisResult result)
-    {
-        // 추가 반응 처리 (필요한 경우)
-        Debug.Log($"피드백 표시됨: {result.feedback}");
-    }
-    
-    /// <summary>
-    /// 반응 처리 코루틴
-    /// </summary>
-    /// <param name="result">분석 결과</param>
-    private IEnumerator ProcessReaction(AnalysisResult result)
-    {
-        // 반응 지연
-        yield return new WaitForSeconds(reactionDelay);
+        if (!isActive) return;
         
-        // 점수에 따른 반응 확률 계산
-        float reactionChance = CalculateReactionChance(result.overallScore);
+        isActive = false;
         
-        // 반응 발생 여부 결정
-        if (Random.Range(0f, 1f) <= reactionChance)
+        // 애니메이션 코루틴 중지
+        if (animationCoroutine != null)
         {
-            // 적절한 반응 선택
-            AudienceReaction selectedReaction = SelectReaction(result.overallScore);
+            StopCoroutine(animationCoroutine);
+            animationCoroutine = null;
+        }
+        
+        // 효과음 코루틴 중지
+        if (soundCoroutine != null)
+        {
+            StopCoroutine(soundCoroutine);
+            soundCoroutine = null;
+        }
+        
+        Debug.Log("🎭 청중 반응 정지!");
+    }
+    
+    /// <summary>
+    /// 애니메이션 코루틴 (15초마다 실행)
+    /// </summary>
+    private IEnumerator AnimationCoroutine()
+    {
+        while (isActive)
+        {
+            yield return new WaitForSeconds(animationInterval);
             
-            if (selectedReaction != null)
+            if (isActive)
             {
-                // 반응 실행
-                TriggerReaction(selectedReaction);
+                TriggerRandomAnimations();
             }
         }
     }
     
     /// <summary>
-    /// 반응 확률 계산
+    /// 효과음 코루틴 (30초마다 실행)
     /// </summary>
-    /// <param name="score">점수</param>
-    /// <returns>반응 확률</returns>
-    private float CalculateReactionChance(float score)
+    private IEnumerator SoundCoroutine()
     {
-        float normalizedScore = score / 100f;
-        float curveValue = scoreToReactionCurve.Evaluate(score);
-        
-        return Mathf.Lerp(baseReactionChance, maxReactionChance, curveValue);
+        while (isActive)
+        {
+            yield return new WaitForSeconds(soundInterval);
+            
+            if (isActive)
+            {
+                // 확률에 따라 효과음 재생
+                if (Random.Range(0f, 1f) <= soundProbability)
+                {
+                    TriggerRandomSound();
+                }
+            }
+        }
     }
     
     /// <summary>
-    /// 반응 선택
+    /// 랜덤 애니메이션 발동 (2명 선택)
     /// </summary>
-    /// <param name="score">점수</param>
-    /// <returns>선택된 반응</returns>
-    private AudienceReaction SelectReaction(float score)
+    private void TriggerRandomAnimations()
     {
-        List<AudienceReaction> validReactions = new List<AudienceReaction>();
+        if (audienceAnimators == null || audienceAnimators.Length == 0) return;
         
-        // 점수 범위에 맞는 반응 찾기
-        foreach (var reaction in reactions)
+        // 중복 방지를 위해 인덱스 리스트 초기화
+        usedAnimatorIndices.Clear();
+        
+        // 발동할 애니메이션 개수 제한
+        int targetCount = Mathf.Min(animationCount, audienceAnimators.Length);
+        
+        for (int i = 0; i < targetCount; i++)
         {
-            if (score >= reaction.minScore && score <= reaction.maxScore)
+            int randomIndex = GetRandomAnimatorIndex();
+            if (randomIndex != -1)
             {
-                validReactions.Add(reaction);
+                Animator animator = audienceAnimators[randomIndex];
+                if (animator != null)
+                {
+                    animator.SetTrigger(animationTrigger);
+                    Debug.Log($"🎭 애니메이션 발동: {animator.name}");
+                }
+                usedAnimatorIndices.Add(randomIndex);
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 중복되지 않는 랜덤 애니메이터 인덱스 반환
+    /// </summary>
+    /// <returns>애니메이터 인덱스</returns>
+    private int GetRandomAnimatorIndex()
+    {
+        // 사용 가능한 인덱스 리스트 생성
+        List<int> availableIndices = new List<int>();
+        for (int i = 0; i < audienceAnimators.Length; i++)
+        {
+            if (!usedAnimatorIndices.Contains(i))
+            {
+                availableIndices.Add(i);
             }
         }
         
-        if (validReactions.Count == 0) return null;
+        // 사용 가능한 인덱스가 없으면 -1 반환
+        if (availableIndices.Count == 0) return -1;
         
-        // 확률에 따라 반응 선택
-        float totalProbability = 0f;
-        foreach (var reaction in validReactions)
-        {
-            totalProbability += reaction.probability;
-        }
-        
-        float randomValue = Random.Range(0f, totalProbability);
-        float currentProbability = 0f;
-        
-        foreach (var reaction in validReactions)
-        {
-            currentProbability += reaction.probability;
-            if (randomValue <= currentProbability)
-            {
-                return reaction;
-            }
-        }
-        
-        return validReactions[0]; // 기본값
+        // 랜덤 인덱스 선택
+        int randomIndex = Random.Range(0, availableIndices.Count);
+        return availableIndices[randomIndex];
     }
     
     /// <summary>
-    /// 반응 실행
+    /// 랜덤 효과음 재생
     /// </summary>
-    /// <param name="reaction">반응</param>
-    private void TriggerReaction(AudienceReaction reaction)
+    private void TriggerRandomSound()
     {
-        // 소리 재생
-        if (reaction.soundClip != null && audioSource != null)
+        if (soundEffects == null || soundEffects.Length == 0 || audioSource == null) return;
+        
+        // 랜덤 효과음 선택
+        int randomIndex = Random.Range(0, soundEffects.Length);
+        AudioClip selectedSound = soundEffects[randomIndex];
+        
+        if (selectedSound != null)
         {
-            PlayReactionSound(reaction.soundClip);
-        }
-        
-        // VFX 생성
-        if (reaction.vfxPrefab != null)
-        {
-            CreateReactionVFX(reaction.vfxPrefab);
-        }
-        
-        // 이벤트 발생
-        OnReactionTriggered?.Invoke(reaction);
-        
-        Debug.Log($"청중 반응 발생: {reaction.reactionType}");
-    }
-    
-    /// <summary>
-    /// 반응 소리 재생
-    /// </summary>
-    /// <param name="clip">오디오 클립</param>
-    private void PlayReactionSound(AudioClip clip)
-    {
-        if (audioSource == null || clip == null) return;
-        
-        // 볼륨 변화 적용
-        float volume = baseVolume + Random.Range(-randomVolumeVariation, randomVolumeVariation);
-        volume = Mathf.Clamp01(volume);
-        
-        audioSource.PlayOneShot(clip, volume);
-    }
-    
-    /// <summary>
-    /// 반응 VFX 생성
-    /// </summary>
-    /// <param name="vfxPrefab">VFX 프리팹</param>
-    private void CreateReactionVFX(GameObject vfxPrefab)
-    {
-        if (vfxPrefab == null) return;
-        
-        // 랜덤 위치 선택
-        Vector3 spawnPosition = GetRandomAudiencePosition();
-        
-        // VFX 생성
-        GameObject vfx = Instantiate(vfxPrefab, spawnPosition, Quaternion.identity, vfxParent);
-        activeVFX.Add(vfx);
-        
-        // 자동 제거
-        StartCoroutine(RemoveVFXAfterDelay(vfx, vfxLifetime));
-    }
-    
-    /// <summary>
-    /// 랜덤 청중 위치 반환
-    /// </summary>
-    /// <returns>청중 위치</returns>
-    private Vector3 GetRandomAudiencePosition()
-    {
-        if (audiencePositions == null || audiencePositions.Length == 0)
-        {
-            return transform.position + Random.insideUnitSphere * 3f;
-        }
-        
-        int randomIndex = Random.Range(0, audiencePositions.Length);
-        return audiencePositions[randomIndex].position;
-    }
-    
-    /// <summary>
-    /// VFX 지연 제거 코루틴
-    /// </summary>
-    /// <param name="vfx">VFX 오브젝트</param>
-    /// <param name="delay">지연 시간</param>
-    private IEnumerator RemoveVFXAfterDelay(GameObject vfx, float delay)
-    {
-        yield return new WaitForSeconds(delay);
-        
-        if (vfx != null)
-        {
-            activeVFX.Remove(vfx);
-            Destroy(vfx);
+            audioSource.PlayOneShot(selectedSound, baseVolume);
+            Debug.Log($"🔊 효과음 재생: {selectedSound.name}");
         }
     }
     
     /// <summary>
-    /// 수동 반응 실행
-    /// </summary>
-    /// <param name="reactionType">반응 유형</param>
-    public void TriggerManualReaction(string reactionType)
-    {
-        AudienceReaction reaction = reactions.Find(r => r.reactionType == reactionType);
-        if (reaction != null)
-        {
-            TriggerReaction(reaction);
-        }
-    }
-    
-    /// <summary>
-    /// 모든 VFX 제거
-    /// </summary>
-    public void ClearAllVFX()
-    {
-        foreach (var vfx in activeVFX)
-        {
-            if (vfx != null)
-            {
-                Destroy(vfx);
-            }
-        }
-        activeVFX.Clear();
-    }
-    
-    /// <summary>
-    /// 반응 큐 초기화
+    /// 반응 큐 초기화 (호환성 유지)
     /// </summary>
     public void ClearReactionQueue()
     {
-        reactionQueue.Clear();
+        // 새로운 구조에서는 큐를 사용하지 않지만 호환성을 위해 유지
+        Debug.Log("🧹 반응 큐 초기화 (호환성 유지)");
+    }
+    
+    /// <summary>
+    /// 모든 VFX 제거 (호환성 유지)
+    /// </summary>
+    public void ClearAllVFX()
+    {
+        // 새로운 구조에서는 VFX를 사용하지 않지만 호환성을 위해 유지
+        Debug.Log("🧹 VFX 초기화 (호환성 유지)");
     }
     
     void OnDestroy()
     {
+        // 반응 시스템 정지
+        StopAudienceReactions();
+        
         // 이벤트 해제
-        if (voiceAnalyzer != null)
+        if (transitionManager != null)
         {
-            voiceAnalyzer.OnAnalysisCompleted -= HandleAnalysisResult;
+            transitionManager.OnPresentationStart -= StartAudienceReactions;
+            transitionManager.OnPresentationEnd -= StopAudienceReactions;
         }
         
-        if (feedbackManager != null)
-        {
-            feedbackManager.OnFeedbackDisplayed -= HandleFeedbackDisplayed;
-        }
-        
-        // 모든 VFX 제거
-        ClearAllVFX();
+        Debug.Log("🎭 AudienceReactionManager 리소스 정리 완료");
     }
 } 

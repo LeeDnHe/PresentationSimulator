@@ -9,6 +9,10 @@ public class StartTrigger : MonoBehaviour
     [Header("연결할 매니저")]
     public FeedbackManager feedbackManager; // 피드백 매니저 참조
     
+    [Header("라이팅 설정")]
+    public GameObject lightingObject; // 비활성화할 라이팅 게임 오브젝트
+    public bool deactivateLighting = true; // 라이팅 비활성화 여부
+    
     private bool hasTriggered = false; // 중복 트리거 방지
     
     void Start()
@@ -31,6 +35,9 @@ public class StartTrigger : MonoBehaviour
         
         // 콜라이더 설정 확인
         CheckColliderSetup();
+        
+        // 라이팅 설정 확인
+        CheckLightingSetup();
     }
     
     /// <summary>
@@ -52,6 +59,30 @@ public class StartTrigger : MonoBehaviour
         }
         
         Debug.Log($"✅ 콜라이더 설정 완료 - 타입: {myCollider.GetType().Name}, isTrigger: {myCollider.isTrigger}");
+    }
+    
+    /// <summary>
+    /// 라이팅 설정 확인
+    /// </summary>
+    private void CheckLightingSetup()
+    {
+        if (deactivateLighting)
+        {
+            if (lightingObject != null)
+            {
+                // 초기에는 라이팅 활성화 상태로 유지
+                lightingObject.SetActive(true);
+                Debug.Log($"✅ 라이팅 오브젝트 설정 완료: {lightingObject.name} (초기 상태: 활성화)");
+            }
+            else
+            {
+                Debug.LogWarning("⚠️ 라이팅 비활성화가 활성화되어 있지만 라이팅 오브젝트가 할당되지 않았습니다!");
+            }
+        }
+        else
+        {
+            Debug.Log("💡 라이팅 비활성화 기능이 비활성화되어 있습니다.");
+        }
     }
     
     /// <summary>
@@ -86,6 +117,14 @@ public class StartTrigger : MonoBehaviour
         // 발표 시작
         Debug.Log($"✅ 시작 조건 충족! 진입 객체: {other.name}");
         hasTriggered = true;
+        
+        // 라이팅 비활성화
+        if (deactivateLighting && lightingObject != null)
+        {
+            lightingObject.SetActive(false);
+            Debug.Log($"💡 라이팅 오브젝트 비활성화: {lightingObject.name}");
+        }
+        
         feedbackManager.StartPresentationPublic();
     }
     
@@ -96,6 +135,14 @@ public class StartTrigger : MonoBehaviour
     public void ResetTrigger()
     {
         hasTriggered = false;
+        
+        // 라이팅 다시 활성화
+        if (deactivateLighting && lightingObject != null)
+        {
+            lightingObject.SetActive(true);
+            Debug.Log($"💡 라이팅 오브젝트 다시 활성화: {lightingObject.name}");
+        }
+        
         Debug.Log("🔄 트리거 상태 초기화됨");
     }
     
@@ -109,6 +156,14 @@ public class StartTrigger : MonoBehaviour
         if (feedbackManager != null)
         {
             hasTriggered = true;
+            
+            // 라이팅 비활성화 (테스트에도 적용)
+            if (deactivateLighting && lightingObject != null)
+            {
+                lightingObject.SetActive(false);
+                Debug.Log($"💡 [테스트] 라이팅 오브젝트 비활성화: {lightingObject.name}");
+            }
+            
             feedbackManager.StartPresentationPublic();
         }
         else
