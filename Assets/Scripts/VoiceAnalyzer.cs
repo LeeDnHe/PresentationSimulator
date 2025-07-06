@@ -801,7 +801,7 @@ public class VoiceAnalyzer : MonoBehaviour
                     // 기존 데이터 변환
                     speechRate = response.wpm,
                     clarity = NormalizeClarity(response.clarity_score),
-                    confidence = CalculateConfidence(response.wpm, response.volume, response.clarity_score)
+                    confidence = CalculateConfidenceWithPitch(response.wpm, response.volume, response.clarity_score, response.pitch_variation)
                 };
                 
                 // 인식된 텍스트를 단어로 분리
@@ -844,12 +844,26 @@ public class VoiceAnalyzer : MonoBehaviour
     /// </summary>
     private float CalculateConfidence(float wpm, float volume, float clarityScore)
     {
-        // WPM, 볼륨, 명확도를 종합해서 자신감 수준 계산
-        float wpmScore = Mathf.Clamp01(wpm / 150f); // 150 WPM을 기준으로 정규화
-        float volumeScore = Mathf.Clamp01(volume * 10f); // 볼륨을 증폭
+        // WPM, 볼륨, 명확도를 종합해서 자신감 수준 계산 (새로운 정상 범위 기준)
+        float wpmScore = Mathf.Clamp01(wpm / 115f); // 115 WPM을 기준으로 정규화
+        float volumeScore = Mathf.Clamp01(volume / 0.07f); // 0.07 볼륨을 기준으로 정규화
         float clarityNorm = NormalizeClarity(clarityScore);
         
         return (wpmScore + volumeScore + clarityNorm) / 3f;
+    }
+    
+    /// <summary>
+    /// 자신감 수준 계산 (억양 변화 포함)
+    /// </summary>
+    private float CalculateConfidenceWithPitch(float wpm, float volume, float clarityScore, float pitchVariation)
+    {
+        // WPM, 볼륨, 명확도, 억양 변화를 종합해서 자신감 수준 계산
+        float wpmScore = Mathf.Clamp01(wpm / 115f); // 115 WPM을 기준으로 정규화
+        float volumeScore = Mathf.Clamp01(volume / 0.07f); // 0.07 볼륨을 기준으로 정규화
+        float clarityNorm = NormalizeClarity(clarityScore);
+        float pitchScore = Mathf.Clamp01(pitchVariation / 500f); // 500을 기준으로 정규화
+        
+        return (wpmScore + volumeScore + clarityNorm + pitchScore) / 4f;
     }
     
     /// <summary>
@@ -875,52 +889,58 @@ public class VoiceAnalyzer : MonoBehaviour
     {
         string feedback = "";
         
-        // WPM 기반 피드백
-        if (data.wpm < 90f)
+        // WPM 기반 피드백 (정상 범위: 85 ~ 115)
+        if (data.wpm < 85f)
         {
             feedback = "조금 더 빠르게 말해보세요. 속도를 높여주세요!";
         }
-        else if (data.wpm > 150f)
+        else if (data.wpm > 115f)
         {
             feedback = "말하는 속도가 빠릅니다. 조금 천천히 말해보세요.";
         }
         else
         {
-            // 볼륨 기반 피드백
-            if (data.volume < 0.3f)
+            // 볼륨 기반 피드백 (정상 범위: 0.03 ~ 0.07)
+            if (data.volume < 0.03f)
             {
                 feedback = "목소리를 좀 더 크게 내어보세요!";
             }
-            else if (data.volume > 0.8f)
+            else if (data.volume > 0.07f)
             {
                 feedback = "목소리가 너무 큽니다. 조금 작게 말해보세요.";
             }
             else
             {
-                // 명확도 기반 피드백
-                if (data.clarity < 0.5f)
+                // 억양 변화 기반 피드백 (정상 범위: 500 기준)
+                if (data.pitchVariation < 400f)
                 {
-                    feedback = "발음을 더 명확하게 해보세요. 또박또박!";
+                    feedback = "억양 변화를 더 풍부하게 해보세요. 감정을 담아서!";
+                }
+                else if (data.pitchVariation > 600f)
+                {
+                    feedback = "억양 변화가 너무 큽니다. 조금 차분하게 말해보세요.";
                 }
                 else
                 {
-                    // 긍정적 피드백
-                    string[] positiveFeedback = {
-                        "좋습니다! 계속 이렇게 발표해주세요!",
-                        "훌륭한 발표입니다! 자신감 있게!",
-                        "완벽합니다! 이 속도로 계속해주세요!",
-                        "멋진 발표네요! 청중이 집중하고 있어요!",
-                        "훌륭한 목소리입니다! 계속 유지해주세요!"
-                    };
-                    feedback = positiveFeedback[UnityEngine.Random.Range(0, positiveFeedback.Length)];
+                    // 명확도 기반 피드백 (정상 범위: 0.85 ~ 1.0)
+                    if (data.clarity < 0.85f)
+                    {
+                        feedback = "발음을 더 명확하게 해보세요. 또박또박!";
+                    }
+                    else
+                    {
+                        // 긍정적 피드백
+                        string[] positiveFeedback = {
+                            "좋습니다! 계속 이렇게 발표해주세요!",
+                            "훌륭한 발표입니다! 자신감 있게!",
+                            "완벽합니다! 이 속도로 계속해주세요!",
+                            "멋진 발표네요! 청중이 집중하고 있어요!",
+                            "훌륭한 목소리입니다! 계속 유지해주세요!"
+                        };
+                        feedback = positiveFeedback[UnityEngine.Random.Range(0, positiveFeedback.Length)];
+                    }
                 }
             }
-        }
-        
-        // 인식된 텍스트가 있으면 추가 정보 제공
-        if (!string.IsNullOrEmpty(data.recognizedText) && data.recognizedText.Length > 10)
-        {
-            feedback += $"\n💬 \"{data.recognizedText.Substring(0, System.Math.Min(30, data.recognizedText.Length))}...\"";
         }
         
         return feedback;

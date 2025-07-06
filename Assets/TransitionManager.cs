@@ -30,6 +30,7 @@ public class TransitionManager : MonoBehaviour
     
     private bool rightTriggerPressed = false;
     private bool leftGripPressed = false;
+    private Coroutine autoEndCoroutine = null; // 자동 종료 코루틴 참조
     
     // Start is called before the first frame update
     void Start()
@@ -145,32 +146,42 @@ public class TransitionManager : MonoBehaviour
     {
         if (slideImages.Count == 0 || !isPresenting) return;
         
-        // 마지막 슬라이드에서 한 번 더 클릭하면 발표 종료
-        if (isOnLastSlide)
-        {
-            Debug.Log("마지막 슬라이드에서 추가 클릭 감지. 발표를 종료합니다.");
-            EndPresentation();
-            return;
-        }
-        
         // 더 많은 슬라이드가 있는지 확인
         if (currentSlideIndex < slideImages.Count - 1)
         {
             currentSlideIndex++;
             DisplaySlide(currentSlideIndex);
             
-            // 마지막 슬라이드 도달 체크
+            // 마지막 슬라이드 도달 체크 - 자동 발표 종료
             if (currentSlideIndex == slideImages.Count - 1)
             {
                 isOnLastSlide = true;
                 Debug.Log($"마지막 슬라이드 도달: {currentSlideIndex + 1}/{slideImages.Count}");
-                Debug.Log("한 번 더 클릭하면 발표가 종료됩니다.");
+                Debug.Log("발표 자동 종료 시작...");
+                
+                // 잠시 후 발표 종료 (마지막 슬라이드를 볼 시간 제공)
+                autoEndCoroutine = StartCoroutine(AutoEndPresentationAfterDelay());
             }
             else
             {
                 Debug.Log($"다음 슬라이드로 이동: {currentSlideIndex + 1}/{slideImages.Count}");
             }
         }
+    }
+    
+    /// <summary>
+    /// 지연 후 자동 발표 종료
+    /// </summary>
+    private IEnumerator AutoEndPresentationAfterDelay()
+    {
+        // 마지막 슬라이드를 3초간 표시
+        yield return new WaitForSeconds(3f);
+        
+        Debug.Log("자동 발표 종료 실행");
+        EndPresentation();
+        
+        // 코루틴 완료 후 참조 정리
+        autoEndCoroutine = null;
     }
     
     /// <summary>
@@ -186,11 +197,17 @@ public class TransitionManager : MonoBehaviour
             currentSlideIndex--;
             DisplaySlide(currentSlideIndex);
             
-            // 마지막 슬라이드에서 벗어나면 isOnLastSlide 해제
+            // 마지막 슬라이드에서 벗어나면 isOnLastSlide 해제 및 자동 종료 코루틴 중지
             if (isOnLastSlide && currentSlideIndex < slideImages.Count - 1)
             {
                 isOnLastSlide = false;
-                Debug.Log("마지막 슬라이드에서 벗어남. 종료 모드 해제.");
+                // 자동 종료 코루틴이 실행 중이면 중지
+                if (autoEndCoroutine != null)
+                {
+                    StopCoroutine(autoEndCoroutine);
+                    autoEndCoroutine = null;
+                }
+                Debug.Log("마지막 슬라이드에서 벗어남. 자동 종료 취소.");
             }
             
             Debug.Log($"이전 슬라이드로 이동: {currentSlideIndex + 1}/{slideImages.Count}");
